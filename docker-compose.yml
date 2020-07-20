@@ -1,0 +1,36 @@
+version: '3.5'
+
+services:
+
+  # schelly:
+    # image: flaviostutz/schelly
+    # ports:
+      # - 8080:8080
+    # environment:
+      # - LOG_LEVEL=debug
+      # - BACKUP_NAME=schelly-pgdump
+      # - WEBHOOK_URL=http://localhost:7070/backups
+      # - BACKUP_CRON_STRING=0 */1 * * * *
+      # - RETENTION_MINUTELY=5
+      # - WEBHOOK_GRACE_TIME=20
+
+  restic-mysql-api:
+    build: .
+    ports:
+      - 7070:7070
+    environment:
+      - RESTIC_PASSWORD=123
+      - LOG_LEVEL=debug
+      - PRE_BACKUP_COMMAND=dd if=/dev/zero of=/backup-source/TESTFILE bs=100MB count=2
+      - POST_BACKUP_COMMAND=rm /backup-source/TESTFILE
+      - SOURCE_DATA_PATH=/backup-source/TESTFILE
+      - TARGET_DATA_PATH=/backup-repo
+      - S3_PATH=/backups/mysql
+      - S3_BUCKET='bem-backups-dev'
+      - DUMP_CONNECTION_NAME='bem_saude'
+      - DUMP_CONNECTION_HOST='localhost:3306'
+      - DUMP_CONNECTION_AUTH_USERNAME='bem_saude'
+      - DUMP_CONNECTION_AUTH_PASSWORD='bem_saude'
+      - AWS_ACCESS_KEY_ID='xxx'
+      - AWS_SECRET_ACCESS_KEY='xxx'
+    
