@@ -13,17 +13,17 @@ version: '3.5'
 
 services:
 
-  # schelly:
-    # image: flaviostutz/schelly
-    # ports:
-      # - 8080:8080
-    # environment:
-      # - LOG_LEVEL=debug
-      # - BACKUP_NAME=schelly-pgdump
-      # - WEBHOOK_URL=http://localhost:7070/backups
-      # - BACKUP_CRON_STRING=0 */1 * * * *
-      # - RETENTION_MINUTELY=5
-      # - WEBHOOK_GRACE_TIME=20
+  schelly:
+    image: flaviostutz/schelly
+    ports:
+      - 8080:8080
+    environment:
+      - LOG_LEVEL=debug
+      - BACKUP_NAME=schelly-pgdump
+      - WEBHOOK_URL=http://localhost:7070/backups
+      - BACKUP_CRON_STRING=0 */1 * * * *
+      - RETENTION_MINUTELY=5
+      - WEBHOOK_GRACE_TIME=20
 
   mysql-api:
     build: .

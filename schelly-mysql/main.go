@@ -47,7 +47,7 @@ func router(w http.ResponseWriter, r *http.Request) {
 		case "COPY":
 			Download(S3_Key_MySQL);		
 		default:
-			fmt.Fprintf(w, "Sorry, only GET, POST, DELETE & DOWNLOAD methods are supported.")
+			fmt.Fprintf(w, "Sorry, only GET, POST, DELETE & COPY methods are supported.")
     }
 }
 
