@@ -255,20 +255,11 @@ func Download(S3_Key_MySQL string){
 
 // ----------------------------------------------------------------------------------------------------
 
-func DeleteAll(){
-	Delete("")
-	return
-}
 func Delete(S3_Key_MySQL string){
 	logrus.Infof("S3_Key_MySQL: %s", S3_Key_MySQL)
 	svc := s3.New(sess)	
 	if len(S3_Key_MySQL) == 0 {
-		iter := s3manager.NewDeleteListIterator(svc, &s3.ListObjectsInput{
-			Bucket: aws.String(S3_BUCKET),
-		})		
-		if err := s3manager.NewBatchDeleteWithClient(svc).Delete(aws.BackgroundContext(), iter); err != nil {
-			logrus.Errorf("Unable to delete objects: %q", err)
-		}
+		logrus.Errorf("Unable to delete without 'key'")
 	} else {
 		var err error	
 		_, err = svc.DeleteObject(&s3.DeleteObjectInput{Bucket: aws.String(S3_BUCKET), Key: aws.String(S3_Key_MySQL)})
@@ -280,10 +271,10 @@ func Delete(S3_Key_MySQL string){
 			Key:    aws.String(S3_Key_MySQL),
 		})
 		if err != nil {
-			logrus.Errorf("Unable to delete objects: %q", err)
+			logrus.Errorf("Unable to delete object: %q", err)
 			return
 		}
 	}
-	logrus.Infof("Deleted object(s) from bucket: %s", S3_BUCKET)
+	logrus.Infof("Deleted object from bucket: %s", S3_BUCKET)
 	return
 }

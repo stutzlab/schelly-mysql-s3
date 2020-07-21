@@ -56,9 +56,6 @@ services:
 // #list existing backup
 // curl localhost:7070/backups/abc123
 
-// #remove all backups
-// curl DELETE localhost:7070/backups	
-
 // #remove existing backup
 // curl DELETE localhost:7070/backups/abc123	
 
