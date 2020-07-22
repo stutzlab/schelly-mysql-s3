@@ -21,6 +21,8 @@ import (
 	"database/sql"
 	"github.com/go-sql-driver/mysql"
 	"github.com/jamf/go-mysqldump"	
+	
+	"encoding/json"	
 )
 
 // ----------------------------------------------------------------------------------------------------
@@ -38,18 +40,73 @@ func router(w http.ResponseWriter, r *http.Request) {
 		S3_Key_MySQL = strings.Replace(r.URL.Path, "/backups/", "", 1)	
 	}
     switch r.Method {
-		case "GET":
-			List(S3_Key_MySQL);	
+		case "GET":	
+			resp := List(S3_Key_MySQL);
+			listsJson := ListsJson{}; listJson := ListJson{};
+			i := 0; ir := 0;
+			for _, item := range resp {
+				if strings.Compare(S3_Key_MySQL, *item.Key) == 0 { 
+					listJson = ListJson{Id: *item.Key, Data_id:*item.Key, Status: "available", Message: *item.StorageClass, Size_mb: *item.Size,}
+					ir++
+				} 
+				if len(S3_Key_MySQL) == 0 {
+					listsJson = append(listsJson, ListJson{Id: *item.Key, Data_id:*item.Key, Status: "available", Message: *item.StorageClass, Size_mb: *item.Size,})
+				} 
+				i++
+			}
+			w.Header().Set("Content-Type","application/json")
+			if i == 0 {
+				w.WriteHeader(404) // 404 notFoundHtmlFile
+			} else {
+				w.WriteHeader(200) // 200 http.StatusOK
+				if ir == 1 {
+					if err := json.NewEncoder(w).Encode(listJson); err != nil {panic(err)}
+				} else {
+					if err := json.NewEncoder(w).Encode(listsJson); err != nil {panic(err)}
+				}
+			}		
 		case "POST":
-			Mysqldump();
+			resp := Mysqldump();
+			dumpJson := DumpJson{}
+			if len(resp) == 0 {
+				dumpJson = DumpJson{Id: "0", Status: "error", Message: "",}						
+			} else {
+				dumpJson = DumpJson{Id: resp, Status: "available", Message: "",}
+			}
+			w.Header().Set("Content-Type","application/json")
+			if len(resp) == 0 {
+				w.WriteHeader(404) // 404 notFoundHtmlFile
+			} else {
+				w.WriteHeader(200) // 200 http.StatusOK
+			}
+			if err := json.NewEncoder(w).Encode(dumpJson); err != nil {
+				panic(err)
+			}	
 		case "DELETE":
 			Delete(S3_Key_MySQL);	
 		case "COPY":
-			Download(S3_Key_MySQL);		
+			//Download(S3_Key_MySQL);	
+			fmt.Fprintf(w, "Sorry, only GET, POST & DELETE methods are supported.")	
 		default:
-			fmt.Fprintf(w, "Sorry, only GET, POST, DELETE & COPY methods are supported.")
+			fmt.Fprintf(w, "Sorry, only GET, POST & DELETE methods are supported.")
     }
 }
+
+// ----------------------------------------------------------------------------------------------------
+
+type DumpJson struct {
+    Id 	     string `json:"id"`
+    Status   string `json:"status"`
+    Message  string `json:"message"`
+}
+type ListJson struct {
+    Id 	     string `json:"id"`
+    Data_id  string `json:"data_id"`
+    Status   string `json:"status"`
+    Message  string `json:"message"`
+    Size_mb  int64 	`json:"size_mb"`	 
+}
+type ListsJson []ListJson
 
 // ----------------------------------------------------------------------------------------------------
 
@@ -96,7 +153,7 @@ func ClearDir(dir string) error {
 
 // ----------------------------------------------------------------------------------------------------
 
-func Mysqldump(){
+func Mysqldump() string{
 	// Open connection to database
 	config := mysql.NewConfig()
 	config.User = DUMP_CONNECTION_AUTH_USERNAME
@@ -108,45 +165,42 @@ func Mysqldump(){
     err := os.Remove(S3_PATH)
 	if err := os.MkdirAll(S3_PATH, 0755); err != nil {
 		logrus.Errorf("Error mkdir: %s", err)
-		return
+		return ""
 	}
 	db, err := sql.Open("mysql", config.FormatDSN())
 	if err != nil {
 		logrus.Errorf("Error opening database: %s", err)
-		return
+		return ""
 	}
 	// Register database with mysqldump
 	dumper, err := mysqldump.Register(db, S3_PATH, dumpFilenameFormat)
 	if err != nil {
 		logrus.Errorf("Error registering databse: %s", err)
-		return
+		return ""
 	}
 	// Dump database to file
 	if err := dumper.Dump(); err != nil {
 		logrus.Errorf("Error dumping: %s", err)
-		return
+		return ""
 	}
 	if file, ok := dumper.Out.(*os.File); ok {
 		logrus.Infof("Successfully mysqldump...")
-		UploadS3(file.Name())
-		err := ClearDir(S3_PATH)
-		if err!=nil{
-			logrus.Errorf("Error ClearDir: %s", err)
-		}		
+		return UploadS3(file.Name())		
 	} else {
 		logrus.Errorf("It's not part of *os.File, but dump is done")
 	}
 	// Close dumper, connected database and file stream.
 	dumper.Close()	
+	return ""
 }
 
 // -----------------------------------------------------------------
 
-func UploadS3(S3_Key_MySQL string){
+func UploadS3(S3_Key_MySQL string) string{
 	file, err := os.Open(S3_Key_MySQL)
 	if err != nil {
 		logrus.Errorf("File not opened: %q", err)
-		return
+		return ""
 	}
     // Get file size and read the file content into a buffer
     fileInfo, _ := file.Stat()
@@ -165,10 +219,10 @@ func UploadS3(S3_Key_MySQL string){
     })
 	if err != nil {
 		logrus.Errorf("Something went wrong uploading the file: %q", err)
-		return
+		return ""
 	}	
 	logrus.Infof("Successfully uploaded to %s", S3_BUCKET)
-    return	
+    return S3_Key_MySQL
 }
 
 // ----------------------------------------------------------------------------------------------------

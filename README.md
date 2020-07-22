@@ -58,12 +58,5 @@ services:
 
 // #remove existing backup
 // curl DELETE localhost:7070/backups/abc123	
-
-// #download all backups
-// curl COPY localhost:7070/backups	
-
-// #download existing backup
-// curl COPY localhost:7070/backups/abc123	
-
 ```
 
