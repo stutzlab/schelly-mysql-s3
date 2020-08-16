@@ -1,9 +1,7 @@
-
 package main
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"strings"	
@@ -22,91 +20,94 @@ import (
 	"github.com/go-sql-driver/mysql"
 	"github.com/jamf/go-mysqldump"	
 	
-	"encoding/json"	
+	"github.com/flaviostutz/schelly-webhook/schellyhook"
+	"time"
 )
 
 // ----------------------------------------------------------------------------------------------------
 
-func main() {  
-	http.HandleFunc("/backups", router) 
-	http.HandleFunc("/backups/", router)  
-	log.Fatal(http.ListenAndServe(":7070", nil))	
+type MySQLBackuper struct{}
+
+func (sb MySQLBackuper) CreateNewBackup(apiID string, timeout time.Duration, shellContext *schellyhook.ShellContext) error {
+			// resp := Mysqldump();
+			// backup := schellyhook.SchellyResponse{
+				// ID:      "0",
+				// Status:  "error",
+				// Message:  "",
+			// }	
+			// if len(resp) != 0 {
+				// backup = schellyhook.SchellyResponse{
+					// ID:      resp,
+					// Status:  "available",
+					// Message:  "",
+				// }				
+			// }
+			
+			return nil
 }
-func router(w http.ResponseWriter, r *http.Request) {
-	S3_Key_MySQL := ""
-	if strings.Compare(r.URL.Path, "/backups") == 0 { 
-		S3_Key_MySQL = strings.Replace(r.URL.Path, "/backups", "", 1)	
-	} else {
-		S3_Key_MySQL = strings.Replace(r.URL.Path, "/backups/", "", 1)	
-	}
-    switch r.Method {
-		case "GET":	
+
+func (sb MySQLBackuper) GetAllBackups() ([]schellyhook.SchellyResponse, error) {
+			S3_Key_MySQL := ""
 			resp := List(S3_Key_MySQL);
-			listsJson := ListsJson{}; listJson := ListJson{};
-			i := 0; ir := 0;
+			if len(resp) == 0 {
+				return nil, nil
+			}			
+			backups := make([]schellyhook.SchellyResponse, 0)
 			for _, item := range resp {
-				if strings.Compare(S3_Key_MySQL, *item.Key) == 0 { 
-					listJson = ListJson{Id: *item.Key, Data_id:*item.Key, Status: "available", Message: *item.StorageClass, Size_mb: *item.Size,}
-					ir++
-				} 
-				if len(S3_Key_MySQL) == 0 {
-					listsJson = append(listsJson, ListJson{Id: *item.Key, Data_id:*item.Key, Status: "available", Message: *item.StorageClass, Size_mb: *item.Size,})
-				} 
-				i++
-			}
-			w.Header().Set("Content-Type","application/json")
-			if i == 0 {
-				w.WriteHeader(404) // 404 notFoundHtmlFile
-			} else {
-				w.WriteHeader(200) // 200 http.StatusOK
-				if ir == 1 {
-					if err := json.NewEncoder(w).Encode(listJson); err != nil {panic(err)}
-				} else {
-					if err := json.NewEncoder(w).Encode(listsJson); err != nil {panic(err)}
+				S3key := *item.Key
+				S3Size := *item.Size
+				S3Msg := *item.StorageClass
+				sr := schellyhook.SchellyResponse{
+					ID:      S3key,
+					DataID:  S3key,
+					Status:  "available",
+					Message: S3Msg,
+					SizeMB:  float64(S3Size),
 				}
+				backups = append(backups, sr)
+			}
+			return backups, nil			
+}
+
+func (sb MySQLBackuper) GetBackup(apiID string) (*schellyhook.SchellyResponse, error) {
+			S3_Key_MySQL := apiID
+			resp := List(S3_Key_MySQL);
+			if len(resp) == 0 {
+				return nil, nil
 			}		
-		case "POST":
-			resp := Mysqldump();
-			dumpJson := DumpJson{}
-			if len(resp) == 0 {
-				dumpJson = DumpJson{Id: "0", Status: "error", Message: "",}						
-			} else {
-				dumpJson = DumpJson{Id: resp, Status: "available", Message: "",}
-			}
-			w.Header().Set("Content-Type","application/json")
-			if len(resp) == 0 {
-				w.WriteHeader(404) // 404 notFoundHtmlFile
-			} else {
-				w.WriteHeader(200) // 200 http.StatusOK
-			}
-			if err := json.NewEncoder(w).Encode(dumpJson); err != nil {
-				panic(err)
-			}	
-		case "DELETE":
-			Delete(S3_Key_MySQL);	
-		case "COPY":
-			//Download(S3_Key_MySQL);	
-			fmt.Fprintf(w, "Sorry, only GET, POST & DELETE methods are supported.")	
-		default:
-			fmt.Fprintf(w, "Sorry, only GET, POST & DELETE methods are supported.")
-    }
+			S3key := *resp[0].Key
+			S3Size := *resp[0].Size
+			S3Msg := *resp[0].StorageClass
+			return &schellyhook.SchellyResponse{
+				ID:      S3key,
+				DataID:  S3key,
+				Status:  "available",
+				Message: S3Msg,
+				SizeMB:  float64(S3Size),
+			}, nil
 }
 
-// ----------------------------------------------------------------------------------------------------
+func (sb MySQLBackuper) DeleteBackup(apiID string) error {
+			Delete(apiID);
+			return nil
+}
 
-type DumpJson struct {
-    Id 	     string `json:"id"`
-    Status   string `json:"status"`
-    Message  string `json:"message"`
+func main() {
+	logrus.Info("====Starting server====")
+	mySQLBackuper := MySQLBackuper{}
+	err := schellyhook.Initialize(mySQLBackuper)
+	if err != nil {
+		logrus.Errorf("Error initializating Schellyhook. err=%s", err)
+		os.Exit(1)
+	}
 }
-type ListJson struct {
-    Id 	     string `json:"id"`
-    Data_id  string `json:"data_id"`
-    Status   string `json:"status"`
-    Message  string `json:"message"`
-    Size_mb  int64 	`json:"size_mb"`	 
+
+func (sb MySQLBackuper) Init() error {
+	return nil
 }
-type ListsJson []ListJson
+func (sb MySQLBackuper) RegisterFlags() error {
+	return nil
+}
 
 // ----------------------------------------------------------------------------------------------------
 
