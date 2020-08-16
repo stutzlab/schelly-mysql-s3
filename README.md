@@ -31,7 +31,7 @@ services:
       - 7070:7070
     environment:
       - LOG_LEVEL=debug
-      - S3_PATH=/mysql
+      - S3_PATH=mysql
       - S3_BUCKET=bucket
       - S3_REGION=us-west-1
       - DUMP_CONNECTION_NAME=name

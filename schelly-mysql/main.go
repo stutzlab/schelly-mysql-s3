@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"net/http"
 	"os"
 	"strings"	
@@ -12,7 +11,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	
 	"github.com/sirupsen/logrus"
 	
@@ -20,7 +18,7 @@ import (
 	"github.com/go-sql-driver/mysql"
 	"github.com/jamf/go-mysqldump"	
 	
-	"github.com/flaviostutz/schelly-webhook/schellyhook"
+	"github.com/flaviostutz/schelly-webhook"
 	"time"
 )
 
@@ -29,67 +27,44 @@ import (
 type MySQLBackuper struct{}
 
 func (sb MySQLBackuper) CreateNewBackup(apiID string, timeout time.Duration, shellContext *schellyhook.ShellContext) error {
-			// resp := Mysqldump();
-			// backup := schellyhook.SchellyResponse{
-				// ID:      "0",
-				// Status:  "error",
-				// Message:  "",
-			// }	
-			// if len(resp) != 0 {
-				// backup = schellyhook.SchellyResponse{
-					// ID:      resp,
-					// Status:  "available",
-					// Message:  "",
-				// }				
-			// }
-			
-			return nil
+			// Remove the server files 
+			e := ClearDir(S3_PATH)
+			if e != nil { 
+				logrus.Errorf("Could not remove the server files: %q", e) 
+			} 
+			return Mysqldump(apiID);
 }
 
 func (sb MySQLBackuper) GetAllBackups() ([]schellyhook.SchellyResponse, error) {
-			S3_Key_MySQL := ""
-			resp := List(S3_Key_MySQL);
+			resp, err := List("");
+			if err != nil {
+				return nil, err
+			}	
 			if len(resp) == 0 {
 				return nil, nil
-			}			
-			backups := make([]schellyhook.SchellyResponse, 0)
-			for _, item := range resp {
-				S3key := *item.Key
-				S3Size := *item.Size
-				S3Msg := *item.StorageClass
-				sr := schellyhook.SchellyResponse{
-					ID:      S3key,
-					DataID:  S3key,
-					Status:  "available",
-					Message: S3Msg,
-					SizeMB:  float64(S3Size),
-				}
-				backups = append(backups, sr)
-			}
-			return backups, nil			
+			}				
+			return resp, nil			
 }
 
 func (sb MySQLBackuper) GetBackup(apiID string) (*schellyhook.SchellyResponse, error) {
-			S3_Key_MySQL := apiID
-			resp := List(S3_Key_MySQL);
+			resp, err := List(getKey(apiID));
+			if err != nil {
+				return nil, err
+			}
 			if len(resp) == 0 {
 				return nil, nil
-			}		
-			S3key := *resp[0].Key
-			S3Size := *resp[0].Size
-			S3Msg := *resp[0].StorageClass
+			}			
 			return &schellyhook.SchellyResponse{
-				ID:      S3key,
-				DataID:  S3key,
-				Status:  "available",
-				Message: S3Msg,
-				SizeMB:  float64(S3Size),
+				ID:      resp[0].ID,
+				DataID:  resp[0].DataID,
+				Status:  resp[0].Status,
+				Message: resp[0].Message,
+				SizeMB:  resp[0].SizeMB,
 			}, nil
 }
 
 func (sb MySQLBackuper) DeleteBackup(apiID string) error {
-			Delete(apiID);
-			return nil
+			return Delete(getKey(apiID));
 }
 
 func main() {
@@ -133,6 +108,12 @@ func connectAWS() *session.Session {
 	}	
 	return sess
 }
+func lastString(ss []string) string {
+    return ss[len(ss)-1]
+}
+func getKey(t string) string {
+    return S3_PATH + "/" + t + ".sql"
+}
 
 func ClearDir(dir string) error {
 	dirRead, err := os.Open(dir)
@@ -154,7 +135,7 @@ func ClearDir(dir string) error {
 
 // ----------------------------------------------------------------------------------------------------
 
-func Mysqldump() string{
+func Mysqldump(S3_Key string) error{
 	// Open connection to database
 	config := mysql.NewConfig()
 	config.User = DUMP_CONNECTION_AUTH_USERNAME
@@ -162,27 +143,27 @@ func Mysqldump() string{
 	config.DBName = DUMP_CONNECTION_NAME
 	config.Net = "tcp"
 	config.Addr = DUMP_CONNECTION_HOST
-	dumpFilenameFormat := fmt.Sprintf("%s-20060102T150405", config.DBName) // accepts time layout string and add .sql at the end of file
     err := os.Remove(S3_PATH)
 	if err := os.MkdirAll(S3_PATH, 0755); err != nil {
 		logrus.Errorf("Error mkdir: %s", err)
-		return ""
+		return err
 	}
 	db, err := sql.Open("mysql", config.FormatDSN())
 	if err != nil {
 		logrus.Errorf("Error opening database: %s", err)
-		return ""
+		return err
 	}
 	// Register database with mysqldump
-	dumper, err := mysqldump.Register(db, S3_PATH, dumpFilenameFormat)
+	dumper, err := mysqldump.Register(db, S3_PATH, S3_Key)
+
 	if err != nil {
 		logrus.Errorf("Error registering databse: %s", err)
-		return ""
+		return err
 	}
 	// Dump database to file
 	if err := dumper.Dump(); err != nil {
 		logrus.Errorf("Error dumping: %s", err)
-		return ""
+		return err
 	}
 	if file, ok := dumper.Out.(*os.File); ok {
 		logrus.Infof("Successfully mysqldump...")
@@ -192,16 +173,16 @@ func Mysqldump() string{
 	}
 	// Close dumper, connected database and file stream.
 	dumper.Close()	
-	return ""
+	return nil
 }
 
 // -----------------------------------------------------------------
 
-func UploadS3(S3_Key_MySQL string) string{
-	file, err := os.Open(S3_Key_MySQL)
+func UploadS3(S3_Key string) error{
+	file, err := os.Open(S3_Key)
 	if err != nil {
 		logrus.Errorf("File not opened: %q", err)
-		return ""
+		return err
 	}
     // Get file size and read the file content into a buffer
     fileInfo, _ := file.Stat()
@@ -211,7 +192,7 @@ func UploadS3(S3_Key_MySQL string) string{
 	svc := s3.New(sess)
     _, err = svc.PutObject(&s3.PutObjectInput{
         Bucket:               aws.String(S3_BUCKET),
-        Key:                  aws.String(S3_Key_MySQL),
+        Key:                  aws.String(S3_Key),
         Body:                 bytes.NewReader(buffer),
         ContentLength:        aws.Int64(size),
         ContentType:          aws.String(http.DetectContentType(buffer)),
@@ -220,116 +201,75 @@ func UploadS3(S3_Key_MySQL string) string{
     })
 	if err != nil {
 		logrus.Errorf("Something went wrong uploading the file: %q", err)
-		return ""
+		return err
 	}	
 	logrus.Infof("Successfully uploaded to %s", S3_BUCKET)
-    return S3_Key_MySQL
+	file.Close()
+    return nil
 }
 
 // ----------------------------------------------------------------------------------------------------
 
-func ListAll() []*s3.Object {
-	return List("")
-}
-func List(S3_Key_MySQL string) []*s3.Object {
+func List(S3_Key string) ([]schellyhook.SchellyResponse, error) {
 	svc := s3.New(sess)
 	resp, err := svc.ListObjectsV2(&s3.ListObjectsV2Input{Bucket: aws.String(S3_BUCKET)})
 	if err != nil {
 		logrus.Errorf("Unable to list items in bucket: %s", err)
+		return nil, err
 	}
-	i := 1
-	fmt.Println("-------------------  Start List ----------------------")
+	backups := make([]schellyhook.SchellyResponse, 0)
 	for _, item := range resp.Contents {
-		if strings.Compare(S3_Key_MySQL, *item.Key) == 0 { 
-			fmt.Println("S3_Key:       ", *item.Key)
-			fmt.Println("Last modified:", *item.LastModified)
-			fmt.Println("Size:         ", *item.Size)
-			fmt.Println("Storage class:", *item.StorageClass)
-			fmt.Println("")	
-		} 
-		if len(S3_Key_MySQL) == 0 {
-			fmt.Println("", i)
-			fmt.Println("S3_Key:       ", *item.Key)
-			fmt.Println("Last modified:", *item.LastModified)
-			fmt.Println("Size:         ", *item.Size)
-			fmt.Println("Storage class:", *item.StorageClass)
-			fmt.Println("")			
-		} 
-		i++
-	}	    
-	fmt.Println("-------------------   End List  ----------------------")
-	return resp.Contents
-}
-
-// ----------------------------------------------------------------------------------------------------
-
-func DownloadAll(){
-	Download("")
-	return
-}
-func Download(S3_Key_MySQL string){
-	downloader := s3manager.NewDownloader(sess)
-	if len(S3_Key_MySQL) == 0 {
-		listAll := 	ListAll()
-		for _, item := range listAll {  
-			S3_Key_MySQL := *item.Key
-			file, err := os.Create(S3_Key_MySQL)
-			if err != nil {
-				logrus.Errorf("Unable to open file: %q", err)
-			}
-			defer file.Close()		
+		S3key := *item.Key
+		S3Size := *item.Size
+		S3Msg := *item.StorageClass
 		
-			_, err = downloader.Download(file, &s3.GetObjectInput{
-				Bucket: aws.String(S3_BUCKET),
-				Key:    aws.String(S3_Key_MySQL),
-			})
-			if err != nil {
-				logrus.Errorf("Something went wrong retrieving the file from S3> %q", err)
-				return
-			}				
-		}		
-	} else {
-		file, err := os.Create(S3_Key_MySQL)
-		if err != nil {
-			logrus.Errorf("Unable to open file: %q", err)
+		if len(S3_Key) == 0 {
+			sr := schellyhook.SchellyResponse{
+						ID:      lastString(strings.Split(S3key, "/")),
+						DataID:  S3key,
+						Status:  "available",
+						Message: S3Msg,
+						SizeMB:  float64(S3Size),
+			}
+			backups = append(backups, sr)
 		}
-		defer file.Close()	
-	
-		_, err = downloader.Download(file, &s3.GetObjectInput{
-			Bucket: aws.String(S3_BUCKET),
-			Key:    aws.String(S3_Key_MySQL),
-		})
-		if err != nil {
-			logrus.Errorf("Something went wrong retrieving the file from S3: %q", err)
-			return
+		if strings.Compare(S3_Key, *item.Key) == 0 {
+			sr := schellyhook.SchellyResponse{
+						ID:      lastString(strings.Split(S3key, "/")),
+						DataID:  S3key,
+						Status:  "available",
+						Message: S3Msg,
+						SizeMB:  float64(S3Size),
+			}
+			backups = append(backups, sr)
 		}
-	}
-	logrus.Infof("Downloaded")
-	return			
+	}    	
+	return backups, nil
 }
 
 // ----------------------------------------------------------------------------------------------------
 
-func Delete(S3_Key_MySQL string){
-	logrus.Infof("S3_Key_MySQL: %s", S3_Key_MySQL)
+func Delete(S3_Key string) error {
+	logrus.Infof("S3_Key: %s", S3_Key)
 	svc := s3.New(sess)	
-	if len(S3_Key_MySQL) == 0 {
+	if len(S3_Key) == 0 {
 		logrus.Errorf("Unable to delete without 'key'")
 	} else {
 		var err error	
-		_, err = svc.DeleteObject(&s3.DeleteObjectInput{Bucket: aws.String(S3_BUCKET), Key: aws.String(S3_Key_MySQL)})
+		_, err = svc.DeleteObject(&s3.DeleteObjectInput{Bucket: aws.String(S3_BUCKET), Key: aws.String(S3_Key)})
 		if err != nil {
 			logrus.Errorf("Unable to delete object: %q", err)
+			return err
 		}
 		err = svc.WaitUntilObjectNotExists(&s3.HeadObjectInput{
 			Bucket: aws.String(S3_BUCKET),
-			Key:    aws.String(S3_Key_MySQL),
+			Key:    aws.String(S3_Key),
 		})
 		if err != nil {
 			logrus.Errorf("Unable to delete object: %q", err)
-			return
+			return err
 		}
 	}
 	logrus.Infof("Deleted object from bucket: %s", S3_BUCKET)
-	return
+	return nil
 }

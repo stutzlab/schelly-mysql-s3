@@ -20,13 +20,13 @@ services:
       - 7070:7070
     environment:
       - LOG_LEVEL=debug
-      - S3_PATH=/mysql
+      - S3_PATH=mysql
       - S3_BUCKET=bem-backups-dev
       - S3_REGION=us-west-1
       - DUMP_CONNECTION_NAME=bem_saude
       - DUMP_CONNECTION_HOST=docker.for.win.localhost:3306
       - DUMP_CONNECTION_AUTH_USERNAME=bem_saude
       - DUMP_CONNECTION_AUTH_PASSWORD=bem_saude
-      - AWS_ACCESS_KEY_ID=aaaaaaaa
-      - AWS_SECRET_ACCESS_KEY=aaaaaaaa
+      - AWS_ACCESS_KEY_ID=key
+      - AWS_SECRET_ACCESS_KEY=sec
     
