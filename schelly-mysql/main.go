@@ -212,7 +212,7 @@ func UploadS3(S3_Key string) error{
 
 func List(S3_Key string) ([]schellyhook.SchellyResponse, error) {
 	svc := s3.New(sess)
-	resp, err := svc.ListObjectsV2(&s3.ListObjectsV2Input{Bucket: aws.String(S3_BUCKET)})
+	resp, err := svc.ListObjectsV2(&s3.ListObjectsV2Input{Bucket: aws.String(S3_BUCKET), Prefix: aws.String(S3_PATH),})
 	if err != nil {
 		logrus.Errorf("Unable to list items in bucket: %s", err)
 		return nil, err
